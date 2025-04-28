@@ -49,7 +49,7 @@ This proposal defines `request` schemas for the three `signed_data` versions cur
 type Capability = {
   [key: string]: unknown;
   optional?: boolean;
-}
+};
 
 type SignParams = {
   version: string;
@@ -62,6 +62,8 @@ type SignParams = {
 };
 
 type SignResult = {
+  address: `0x${string}`;
+  chainId: `0x${string}`;
   signature: `0x${string}`;
   capabilities?: Record<string, any>;
 };
@@ -70,34 +72,55 @@ type SignResult = {
 ##### Request Interfaces
 
 Below are `request` interfaces for the `signed_data` `version`s specified in [EIP-191](./eip-191.md) at time of writing. These include:
-* `0x00` - Data with intended validator
-* `0x01` - [EIP-712](./eip-712.md) Typed Data
-* `0x45` - Personal Sign
+
+- `0x00` - Data with intended validator
+- `0x01` - [EIP-712](./eip-712.md) Typed Data
+- `0x45` - Personal Sign
 
 Any new `request` interfaces corresponding to new `signed_data` `version`s SHOULD be defined in their own ERCs.
 
 ```typescript
 type ValidatorRequest = {
-  type: '0x00';
+  type: "0x00";
   data: {
     validator: `0x${string}`; // Intended validator address
     data: `0x${string}`; // Data to sign
   };
-}
+};
 
 type TypedDataRequest = {
-  type: '0x01';
+  type: "0x01";
   data: {
-    ...TypedData // TypedData as defined by EIP-712
-  }
-}
+    types: {
+      type: "object";
+      properties: {
+        EIP712Domain: { type: "array" };
+      };
+      additionalProperties: {
+        type: "array";
+        items: {
+          type: "object";
+          properties: {
+            name: { type: "string" };
+            type: { type: "string" };
+          };
+          required: ["name", "type"];
+        };
+      };
+      required: ["EIP712Domain"];
+    };
+    primaryType: { type: "string" };
+    domain: { type: "object" };
+    message: { type: "object" };
+  };
+};
 
 type PersonalSignRequest = {
-  type: '0x45';
+  type: "0x45";
   data: {
     message: string; // UTF-8 message string
-  }
-}
+  };
+};
 ```
 
 ##### `wallet_sign` Example Parameters
@@ -118,21 +141,65 @@ type PersonalSignRequest = {
 
 ```json
 {
-  "signature": "0x00000000000000000000000000000000000000000000000000000000000000000e670ec64341771606e55d6b4ca35a1a6b75ee3d5145a99d05921026d1527331",
+  "signature": "0x00000000000000000000000000000000000000000000000000000000000000000e670ec64341771606e55d6b4ca35a1a6b75ee3d5145a99d05921026d1527331"
 }
 ```
 
 ## Rationale
 
-TODO
+The `wallet_sign` method provides several key benefits:
+
+1. **Consolidation of Signing Methods**: Currently, wallets must implement multiple JSON-RPC methods (`eth_sign`, `personal_sign`, `eth_signTypedData`, etc.) to handle different types of signature requests. By consolidating these under a single `wallet_sign` method with a `type` parameter, we:
+
+   - Simplify wallet implementations
+   - Reduce code duplication
+   - Make it easier to maintain and update signing functionality
+
+2. **Extensibility**: The `type`-based approach allows for:
+
+   - Easy addition of new signing types without creating new RPC methods
+   - Support for future [EIP-191](./eip-191.md) versions through the same interface
+   - Backwards compatibility with existing signing standards
+
+3. **Capabilities Support**: By incorporating [EIP-5792](./eip-5792.md) capabilities:
+   - Applications can discover and request specific signing features
+   - Wallets can communicate supported functionality
+   - Future extensions can be added without breaking changes
 
 ## Backwards Compatibility
 
-TODO
+This EIP maintains backwards compatibility with existing [EIP-191](./eip-191.md) signature standards in several ways:
+
+1. **Version Support**: The `type` parameter in the request directly maps to existing [EIP-191](./eip-191.md) versions:
+
+   - `0x00` for data with intended validator
+   - `0x01` for [EIP-712](./eip-712.md) typed data
+   - `0x45` for personal sign messages
+
+2. **Data Format Preservation**: Each version's `data` field maintains the same structure and validation rules as their original implementations:
+
+   - Typed data maintains [EIP-712](./eip-712.md) formatting
+   - Personal sign maintains UTF-8 message string format
+   - Validator signing maintains the original validator address and data format
+
+3. **Signature Output**: The signatures produced by `wallet_sign` are identical to those produced by the original methods (`eth_sign`, `personal_sign`, `eth_signTypedData`), ensuring compatibility with existing signature verification systems.
+
+4. **Optional Features**: New features like capabilities are entirely optional, allowing wallets to implement basic signing functionality without supporting the full specification.
+
+Wallets can continue supporting legacy signing methods while implementing `wallet_sign`, allowing for a gradual transition to the new standard.
 
 ## Security Considerations
 
-TODO
+1. **Method Consolidation Risks**:
+
+   - Wallets MUST carefully validate the `type` parameter to ensure requests aren't misdirected between different signing methods
+   - Implementation bugs could potentially affect all signing types at once, requiring extra careful testing and auditing
+   - Clear error messages MUST distinguish between type-specific failures and general method failures
+
+2. **Version Parameter Validation**:
+   - The top-level `version` parameter MUST be validated to prevent protocol mismatches
+   - Wallets MUST reject requests with unknown versions rather than attempting fallback behavior
+   - Version validation MUST happen before any signature processing begins
 
 ## Copyright
 
